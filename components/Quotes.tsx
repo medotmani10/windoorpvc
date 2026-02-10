@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Plus, Printer, Trash2, Calculator, X, Loader2, FileCheck, ArrowRightLeft, FileText, CheckCircle2 } from 'lucide-react';
+import { Plus, Printer, Trash2, X, Loader2, FileCheck, CheckCircle2, ArrowRightCircle, Calculator, Ruler, Package, Truck, Wrench, UserPlus, MapPin, Phone, Save } from 'lucide-react';
 import { supabase } from '../supabase';
 import { CURRENCY, WINDOW_TYPES, GLASS_TYPES, PROFILE_TYPES } from '../constants';
 import { Client, Quote, QuoteItem } from '../types';
@@ -9,6 +9,7 @@ const Quotes: React.FC = () => {
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [convertingId, setConvertingId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -20,10 +21,19 @@ const Quotes: React.FC = () => {
   // Quote Form State
   const [currentQuote, setCurrentQuote] = useState<Partial<Quote>>({
     date: new Date().toISOString().split('T')[0],
-    items: []
+    items: [],
+    clientId: '',
+    notes: ''
+  });
+
+  // New Client State (Inline Creation)
+  const [isNewClient, setIsNewClient] = useState(false);
+  const [newClientData, setNewClientData] = useState({
+    name: '',
+    phone: '',
+    address: ''
   });
   
-  // Item Calculator State
   const [itemForm, setItemForm] = useState<Partial<QuoteItem>>({
     type: WINDOW_TYPES[0],
     profileType: 'Aluminium',
@@ -32,7 +42,13 @@ const Quotes: React.FC = () => {
     height: 100,
     quantity: 1,
     glassType: GLASS_TYPES[0],
-    unitPrice: 0
+    materialPrice: 0,
+    accessoryPrice: 1500,
+    fabricationPrice: 2500,
+    transportPrice: 500,
+    installationPrice: 1000,
+    unitPrice: 0,
+    totalPrice: 0
   });
 
   useEffect(() => {
@@ -42,61 +58,62 @@ const Quotes: React.FC = () => {
 
   async function fetchQuotes() {
     setLoading(true);
-    const { data } = await supabase.from('quotes').select('*, clients(name)').order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('quotes').select('*, clients(name)').order('created_at', { ascending: false });
     if (data) {
       setQuotes(data.map(q => ({
         ...q,
         clientId: q.client_id,
         clientName: q.clients?.name,
-        validUntil: q.valid_until
+        validUntil: q.valid_until,
+        items: []
       })));
     }
     setLoading(false);
   }
 
   async function fetchClients() {
-    const { data } = await supabase.from('clients').select('*');
+    const { data } = await supabase.from('clients').select('*').order('name');
     if (data) setClients(data as any);
   }
 
-  // --- Calculator Logic ---
   const calculatePrice = () => {
-    const w = itemForm.width || 0; // cm
-    const h = itemForm.height || 0; // cm
+    const w_m = (itemForm.width || 0) / 100;
+    const h_m = (itemForm.height || 0) / 100;
     const qty = itemForm.quantity || 1;
     
-    // تحويل للمتر
-    const w_m = w / 100;
-    const h_m = h / 100;
-
-    // حساب طول البروفيل تقريبي
-    const perimeter = (w_m + h_m) * 2; 
-    const innerProfile = (w_m + h_m) * 2; 
-    const totalProfileLength = (perimeter + innerProfile) * 1.1; // +10% waste
-
-    // أسعار افتراضية
-    const profilePricePerMeter = itemForm.profileType === 'Aluminium' ? 1200 : 900;
-    const glassPricePerM2 = 1500;
-    const accessoryCost = 2000; 
-    const fabricationCost = 3000; 
-
+    const perimeter = (w_m + h_m) * 2;
+    const profileCost = perimeter * 1.2 * (itemForm.profileType === 'Aluminium' ? 2200 : 1600);
     const glassArea = w_m * h_m;
+    const glassCost = glassArea * (itemForm.glassType.includes('Double') ? 4500 : 2800);
     
-    const materialCost = (totalProfileLength * profilePricePerMeter) + (glassArea * glassPricePerM2) + accessoryCost;
-    const totalCost = materialCost + fabricationCost;
+    const materialPrice = Math.ceil(profileCost + glassCost);
+    const unitPrice = materialPrice + 
+                     (itemForm.accessoryPrice || 0) + 
+                     (itemForm.fabricationPrice || 0) + 
+                     (itemForm.transportPrice || 0) + 
+                     (itemForm.installationPrice || 0);
     
-    // هامش الربح 20%
-    const sellingPrice = Math.ceil(totalCost * 1.2);
-
-    setItemForm(prev => ({ ...prev, unitPrice: sellingPrice, totalPrice: sellingPrice * qty }));
+    setItemForm(prev => ({ 
+      ...prev, 
+      materialPrice, 
+      unitPrice, 
+      totalPrice: unitPrice * qty 
+    }));
   };
 
-  useEffect(() => {
-    calculatePrice();
-  }, [itemForm.width, itemForm.height, itemForm.quantity, itemForm.type, itemForm.profileType]);
+  useEffect(() => { 
+    calculatePrice(); 
+  }, [
+    itemForm.width, itemForm.height, itemForm.quantity, itemForm.type, 
+    itemForm.profileType, itemForm.glassType, itemForm.accessoryPrice, 
+    itemForm.fabricationPrice, itemForm.transportPrice, itemForm.installationPrice
+  ]);
 
   const addItem = () => {
-    if (!itemForm.width || !itemForm.height) return;
+    if (!itemForm.width || !itemForm.height || itemForm.width <= 0 || itemForm.height <= 0) {
+      alert('يرجى إدخال الأبعاد بشكل صحيح');
+      return;
+    }
     const newItem = { ...itemForm } as QuoteItem;
     setCurrentQuote(prev => ({
       ...prev,
@@ -113,28 +130,53 @@ const Quotes: React.FC = () => {
   };
 
   const handleSaveQuote = async () => {
-    if (!currentQuote.clientId || !currentQuote.items?.length) return alert('يرجى اختيار العميل وإضافة عنصر واحد على الأقل');
+    // 1. التحقق من صحة المدخلات
+    if (!isNewClient && !currentQuote.clientId) return alert('يرجى اختيار الزبون');
+    if (isNewClient && !newClientData.name) return alert('يرجى إدخال اسم الزبون الجديد');
+    if (!currentQuote.items || currentQuote.items.length === 0) return alert('يرجى إضافة قطعة واحدة على الأقل للعرض');
     
-    const subtotal = currentQuote.items.reduce((sum, i) => sum + i.totalPrice, 0);
-    const tax = subtotal * 0.19;
-    const total = subtotal + tax;
-
+    setIsSaving(true);
     try {
-      // 1. Save Quote Header
-      const { data: quoteData, error } = await supabase.from('quotes').insert({
-        client_id: currentQuote.clientId,
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
+      if (!user) throw new Error('انتهت جلسة العمل، يرجى إعادة تسجيل الدخول');
+
+      let finalClientId = currentQuote.clientId;
+
+      // 2. معالجة الزبون الجديد
+      if (isNewClient) {
+        const { data: newClient, error: clientError } = await supabase.from('clients').insert({
+          name: newClientData.name,
+          phone: newClientData.phone,
+          address: newClientData.address,
+          user_id: user.id
+        }).select().single();
+        
+        if (clientError) throw new Error('فشل إنشاء الزبون: ' + clientError.message);
+        finalClientId = newClient.id;
+      }
+
+      // 3. حساب القيم المالية
+      const subtotal = currentQuote.items.reduce((sum, i) => sum + (i.totalPrice || 0), 0);
+      const tax = subtotal * 0.19;
+      const total = subtotal + tax;
+
+      // 4. إدراج رأس عرض السعر (Quote Header)
+      const { data: quoteData, error: quoteError } = await supabase.from('quotes').insert({
+        client_id: finalClientId,
         date: currentQuote.date,
-        valid_until: currentQuote.validUntil,
         status: 'مسودة',
         subtotal,
         tax,
         total,
-        notes: currentQuote.notes
+        notes: currentQuote.notes,
+        user_id: user.id
       }).select().single();
 
-      if (error) throw error;
+      if (quoteError) throw new Error('فشل إنشاء عرض السعر: ' + quoteError.message);
+      if (!quoteData) throw new Error('لم يتم استلام بيانات العرض بعد الحفظ');
 
-      // 2. Save Items
+      // 5. إعداد بنود العرض (Quote Items)
       const itemsPayload = currentQuote.items.map(item => ({
         quote_id: quoteData.id,
         type: item.type,
@@ -144,18 +186,45 @@ const Quotes: React.FC = () => {
         height: item.height,
         quantity: item.quantity,
         glass_type: item.glassType,
-        unit_price: item.unitPrice,
-        total_price: item.totalPrice
+        material_price: item.materialPrice || 0,
+        accessory_price: item.accessoryPrice || 0,
+        fabrication_price: item.fabricationPrice || 0,
+        transport_price: item.transportPrice || 0,
+        installation_price: item.installationPrice || 0,
+        unit_price: item.unitPrice || 0,
+        total_price: item.totalPrice || 0,
+        user_id: user.id
       }));
 
-      await supabase.from('quote_items').insert(itemsPayload);
-      
+      const { error: itemsError } = await supabase.from('quote_items').insert(itemsPayload);
+      if (itemsError) throw new Error('فشل إضافة البنود: ' + itemsError.message);
+
+      // 6. النجاح والتنظيف
+      alert('تم الحفظ بنجاح');
       setIsModalOpen(false);
       fetchQuotes();
-      setCurrentQuote({ date: new Date().toISOString().split('T')[0], items: [] });
-    } catch (error) {
-      console.error(error);
-      alert('خطأ في حفظ العرض');
+      fetchClients();
+      
+      // Reset
+      setCurrentQuote({ date: new Date().toISOString().split('T')[0], items: [], clientId: '', notes: '' });
+      setIsNewClient(false);
+      setNewClientData({ name: '', phone: '', address: '' });
+      
+    } catch (error: any) {
+      console.error('Error in handleSaveQuote:', error);
+      alert(error.message || 'حدث خطأ غير متوقع أثناء الحفظ');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleClientSelection = (val: string) => {
+    if (val === 'NEW_CLIENT') {
+      setIsNewClient(true);
+      setCurrentQuote({ ...currentQuote, clientId: '' });
+    } else {
+      setIsNewClient(false);
+      setCurrentQuote({ ...currentQuote, clientId: val });
     }
   };
 
@@ -167,57 +236,61 @@ const Quotes: React.FC = () => {
 
   const handleProcessConversion = async () => {
     if (!selectedQuoteForConversion) return;
-    
     setConvertingId(selectedQuoteForConversion.id);
     try {
-      // 1. Fetch Quote Items
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('جلسة العمل منتهية');
+
       const { data: qItems, error: itemsError } = await supabase
-        .from('quote_items')
-        .select('*')
-        .eq('quote_id', selectedQuoteForConversion.id);
-      
+        .from('quote_items').select('*').eq('quote_id', selectedQuoteForConversion.id);
       if (itemsError) throw itemsError;
 
-      // 2. Create Invoice
+      const invStatus = conversionType === 'شكلية' ? 'مسودة' : 'معلقة';
       const { data: newInv, error: invError } = await supabase.from('invoices').insert({
         client_id: selectedQuoteForConversion.clientId,
         type: conversionType,
         amount: selectedQuoteForConversion.subtotal,
         tax: selectedQuoteForConversion.tax,
         total: selectedQuoteForConversion.total,
-        status: conversionType === 'شكلية' ? 'مسودة' : 'معلقة',
+        status: invStatus,
         date: new Date().toISOString(),
-        due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() // Due in 7 days
+        user_id: user.id
       }).select().single();
-
       if (invError) throw invError;
 
-      // 3. Create Invoice Items
       if (newInv && qItems) {
-        const invItemsPayload = qItems.map(item => ({
+        const invItems = qItems.map(item => ({
           invoice_id: newInv.id,
-          description: `${item.type} - ${item.profile_type} (${item.width}x${item.height} سم) - ${item.glass_type}`,
+          description: `${item.type} (${item.width}x${item.height} سم) - ${item.profile_type} ${item.color}`,
           unit: 'وحدة',
           quantity: item.quantity,
           unit_price: item.unit_price,
-          total: item.total_price
+          total: item.total_price,
+          user_id: user.id
         }));
-
-        const { error: invItemsError } = await supabase.from('invoice_items').insert(invItemsPayload);
-        if (invItemsError) throw invItemsError;
+        await supabase.from('invoice_items').insert(invItems);
       }
 
-      // 4. Update Quote Status only if converting to Final Invoice
-      if (conversionType === 'ضريبية') {
-        await supabase.from('quotes').update({ status: 'مؤكد' }).eq('id', selectedQuoteForConversion.id);
+      if (conversionType === 'شكلية') {
+        await supabase.from('projects').insert([{
+          name: `طلبية: ${selectedQuoteForConversion.clientName}`,
+          client_name: selectedQuoteForConversion.clientName,
+          client_id: selectedQuoteForConversion.clientId,
+          budget: selectedQuoteForConversion.total,
+          status: 'قيد الانتظار',
+          progress: 0,
+          expenses: 0,
+          start_date: new Date().toISOString().split('T')[0],
+          user_id: user.id
+        }]);
       }
 
-      alert('تم إنشاء الفاتورة بنجاح!');
+      await supabase.from('quotes').update({ status: 'تم التحويل' }).eq('id', selectedQuoteForConversion.id);
+      
+      alert(`تم بنجاح! تم إنشاء فاتورة ${conversionType} وطلبية عمل.`);
       setIsConvertModalOpen(false);
       fetchQuotes();
-
     } catch (error: any) {
-      console.error('Conversion Error:', error);
       alert('حدث خطأ أثناء التحويل: ' + error.message);
     } finally {
       setConvertingId(null);
@@ -225,11 +298,8 @@ const Quotes: React.FC = () => {
   };
 
   const handlePrint = async (quote: Quote) => {
-    // Fetch Company Settings first
     const { data: settings } = await supabase.from('settings').select('*').single();
     const company = settings || { company_name: 'Windoor System', address: '', phone: '' };
-
-    // Fetch Items if not loaded
     const { data: items } = await supabase.from('quote_items').select('*').eq('quote_id', quote.id);
     
     const w = window.open('', '_blank');
@@ -240,66 +310,41 @@ const Quotes: React.FC = () => {
           <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap" rel="stylesheet">
           <style>
             body { font-family: 'Tajawal', sans-serif; padding: 40px; color: #333; }
-            .header-container { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; border-bottom: 2px solid #eee; padding-bottom: 20px; }
-            .company-details h1 { margin: 0; color: #000; font-size: 24px; }
-            .company-details p { margin: 4px 0; font-size: 12px; color: #555; }
-            .logo { max-height: 80px; margin-bottom: 10px; }
-            .doc-title { text-align: left; }
-            .doc-title h2 { margin: 0; font-size: 28px; color: #fbbf24; text-transform: uppercase; }
-            .doc-title p { margin: 5px 0; color: #777; font-size: 12px; }
-            
+            .header { display: flex; justify-content: space-between; border-bottom: 2px solid #fbbf24; padding-bottom: 20px; margin-bottom: 30px; }
             table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th { background-color: #f9fafb; padding: 12px; text-align: right; border-bottom: 2px solid #ddd; font-size: 12px; }
-            td { padding: 12px; border-bottom: 1px solid #eee; font-size: 13px; }
-            
+            th { background: #f8fafc; padding: 12px; text-align: right; border-bottom: 2px solid #ddd; font-size: 11px; color: #64748b; }
+            td { padding: 12px; border-bottom: 1px solid #eee; font-size: 12px; }
             .totals { width: 300px; margin-right: auto; margin-top: 30px; }
-            .totals-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee; }
-            .totals-row.final { font-weight: bold; font-size: 16px; border-top: 2px solid #000; border-bottom: none; margin-top: 10px; padding-top: 10px; }
+            .totals div { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f1f5f9; }
+            .grand-total { border-top: 2px solid #000; font-weight: 900; font-size: 18px; margin-top: 10px; padding-top: 15px !important; color: #000; }
           </style>
         </head>
         <body>
-          <div class="header-container">
-            <div class="company-details">
-              ${company.logo_url ? `<img src="${company.logo_url}" class="logo" />` : ''}
-              <h1>${company.company_name}</h1>
-              <p>${company.address}</p>
-              <p>${company.phone} | ${company.email}</p>
-            </div>
-            <div class="doc-title">
-              <h2>عرض أسعار (Devis)</h2>
-              <p>رقم: #${quote.id.substring(0,8)}</p>
-              <p>التاريخ: ${quote.date}</p>
-              <p>العميل: <strong>${quote.clientName}</strong></p>
-            </div>
+          <div class="header">
+            <div><h1 style="margin:0">${company.company_name}</h1><p style="margin:5px 0; font-size:12px; color:#64748b;">${company.address} | ${company.phone}</p></div>
+            <div style="text-align:left"><h2 style="margin:0; color:#fbbf24">عرض أسعار تفصيلي</h2><p style="margin:5px 0; font-size:12px">الرقم: #${quote.id.substring(0,8)}</p><p style="margin:5px 0; font-size:12px">الزبون: <strong>${quote.clientName}</strong></p></div>
           </div>
-
           <table>
-            <thead>
-              <tr><th>الوصف / النوع</th><th>الأبعاد (سم)</th><th>الكمية</th><th>السعر الإفرادي</th><th>الإجمالي</th></tr>
-            </thead>
+            <thead><tr><th>الوصف والنوع</th><th>الأبعاد (سم)</th><th>مواد+ورشة</th><th>أكسسوارات</th><th>نقل+تركيب</th><th>الكمية</th><th>الإجمالي</th></tr></thead>
             <tbody>
               ${items?.map((item: any) => `
                 <tr>
-                  <td>
-                    <strong>${item.type}</strong>
-                    <div style="font-size:11px; color:#666;">${item.profile_type} - ${item.color}</div>
-                  </td>
-                  <td dir="ltr" style="text-align:right">${item.width} x ${item.height}</td>
-                  <td>${item.quantity}</td>
-                  <td>${Number(item.unit_price).toLocaleString()}</td>
+                  <td><strong>${item.type}</strong><br/><span style="font-size:10px; color:#64748b">${item.profile_type} - ${item.glass_type}</span></td>
+                  <td style="direction:ltr; text-align:right">${item.width} x ${item.height}</td>
+                  <td>${(Number(item.material_price) + Number(item.fabrication_price)).toLocaleString()}</td>
+                  <td>${Number(item.accessory_price).toLocaleString()}</td>
+                  <td>${(Number(item.transport_price) + Number(item.installation_price)).toLocaleString()}</td>
+                  <td style="text-align:center">${item.quantity}</td>
                   <td style="font-weight:bold">${Number(item.total_price).toLocaleString()}</td>
                 </tr>
               `).join('')}
             </tbody>
           </table>
-
           <div class="totals">
-             <div class="totals-row"><span>المجموع (HT)</span><span>${Number(quote.subtotal).toLocaleString()} ${CURRENCY}</span></div>
-             <div class="totals-row"><span>الضريبة (19%)</span><span>${Number(quote.tax).toLocaleString()} ${CURRENCY}</span></div>
-             <div class="totals-row final"><span>الإجمالي (TTC)</span><span>${Number(quote.total).toLocaleString()} ${CURRENCY}</span></div>
+             <div><span>المجموع HT:</span><span>${Number(quote.subtotal).toLocaleString()} ${CURRENCY}</span></div>
+             <div class="grand-total"><span>الإجمالي TTC (19%):</span><span>${Number(quote.total).toLocaleString()} ${CURRENCY}</span></div>
           </div>
-          
-          <script>window.print()</script>
+          <script>window.onload = () => { window.print(); }</script>
         </body>
       </html>
     `);
@@ -308,18 +353,18 @@ const Quotes: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center bg-white p-6 rounded-3xl border border-slate-100">
+      <div className="flex justify-between items-center bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
         <div>
-          <h2 className="text-2xl font-black text-slate-800">حساب Devis الذكي</h2>
-          <p className="text-slate-400 text-sm">إنشاء عروض أسعار دقيقة للألمنيوم و PVC</p>
+          <h2 className="text-2xl font-black text-slate-800">مركز حساب Devis</h2>
+          <p className="text-slate-400 text-sm mt-1">إدارة عروض الأسعار والتكاليف</p>
         </div>
-        <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg hover:bg-blue-700">
+        <button onClick={() => { setIsModalOpen(true); setIsNewClient(false); }} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg hover:bg-blue-700 transition-all">
           <Plus size={20} /> عرض جديد
         </button>
       </div>
 
-      <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden">
-        {loading ? <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-blue-600"/></div> : 
+      <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+        {loading ? <div className="p-20 flex justify-center"><Loader2 className="animate-spin text-blue-600" size={32}/></div> : 
         <table className="w-full text-sm text-right">
           <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100">
             <tr>
@@ -332,21 +377,28 @@ const Quotes: React.FC = () => {
           </thead>
           <tbody>
             {quotes.map(q => (
-              <tr key={q.id} className="border-b border-slate-50 hover:bg-slate-50/50">
+              <tr key={q.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                 <td className="p-4 font-bold text-slate-700">{q.clientName}</td>
-                <td className="p-4">{q.date}</td>
+                <td className="p-4 text-slate-500">{q.date}</td>
                 <td className="p-4 font-black text-blue-600">{q.total?.toLocaleString()} {CURRENCY}</td>
-                <td className="p-4"><span className={`px-2 py-1 rounded text-xs font-bold ${q.status === 'مؤكد' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>{q.status}</span></td>
+                <td className="p-4">
+                  <span className={`px-2 py-1 rounded text-[10px] font-bold ${
+                    q.status === 'تم التحويل' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'
+                  }`}>
+                    {q.status}
+                  </span>
+                </td>
                 <td className="p-4 flex justify-center gap-2">
-                  <button onClick={() => handlePrint(q)} className="p-2 text-slate-400 hover:text-blue-600" title="طباعة"><Printer size={18}/></button>
+                  <button onClick={() => handlePrint(q)} className="p-2 text-slate-300 hover:text-blue-600" title="طباعة"><Printer size={18}/></button>
                   <button 
                     onClick={() => openConversionModal(q)} 
-                    disabled={convertingId === q.id || q.status === 'مؤكد'}
-                    className={`p-2 rounded-lg transition-colors flex items-center gap-2 font-bold text-xs ${q.status === 'مؤكد' ? 'text-green-300 cursor-not-allowed' : 'text-slate-400 hover:text-green-600 hover:bg-green-50'}`}
-                    title="تحويل إلى فاتورة"
+                    disabled={convertingId === q.id || q.status === 'تم التحويل'} 
+                    className={`flex items-center gap-1 p-2 rounded-xl font-bold text-[10px] transition-all ${
+                      q.status === 'تم التحويل' ? 'text-green-300 cursor-not-allowed' : 'text-slate-400 hover:text-green-600 hover:bg-green-50'
+                    }`}
                   >
-                    {convertingId === q.id ? <Loader2 className="animate-spin" size={18}/> : <FileCheck size={18}/>}
-                    <span className="hidden md:inline">إنشاء فاتورة</span>
+                    {convertingId === q.id ? <Loader2 className="animate-spin" size={14}/> : <FileCheck size={16}/>}
+                    {q.status === 'تم التحويل' ? 'تم التحويل' : 'تحويل لفاتورة'}
                   </button>
                 </td>
               </tr>
@@ -356,161 +408,198 @@ const Quotes: React.FC = () => {
         }
       </div>
 
-      {/* Quote Creation Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm overflow-y-auto">
-          <div className="bg-white w-full max-w-4xl rounded-3xl shadow-2xl flex flex-col max-h-[90vh]">
-            <div className="p-6 border-b border-slate-100 flex justify-between bg-slate-50">
-              <h3 className="font-bold text-lg text-slate-800">إنشاء عرض أسعار جديد</h3>
-              <button onClick={() => setIsModalOpen(false)}><X className="text-slate-400 hover:text-red-500"/></button>
+          <div className="bg-white w-full max-w-5xl rounded-[40px] shadow-2xl flex flex-col max-h-[95vh] animate-in zoom-in duration-300">
+            <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <div className="flex items-center gap-3">
+                 <div className="p-3 bg-blue-600 text-white rounded-2xl shadow-lg shadow-blue-500/20"><Calculator size={24}/></div>
+                 <h3 className="font-black text-xl text-slate-800">حاسبة Devis وورشة النجارة</h3>
+              </div>
+              <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-red-50 hover:text-red-500 rounded-xl transition-all"><X size={24}/></button>
             </div>
             
-            <div className="p-6 overflow-y-auto flex-1 space-y-8">
-              {/* Client Selection */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                   <label className="text-xs font-bold text-slate-500 block mb-1">الزبون</label>
-                   <select 
-                     className="w-full p-3 bg-white border border-slate-300 rounded-xl text-slate-900"
-                     onChange={e => setCurrentQuote({...currentQuote, clientId: e.target.value})}
-                   >
-                     <option value="">اختر الزبون...</option>
-                     {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                   </select>
+            <div className="p-8 overflow-y-auto flex-1 space-y-8">
+              {/* قسم اختيار أو إنشاء زبون */}
+              <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-slate-400 mr-1 flex items-center gap-1 uppercase">الزبون المستهدف <UserPlus size={12}/></label>
+                    <select 
+                      className="w-full p-4 bg-white border border-slate-200 rounded-2xl text-slate-900 font-bold"
+                      value={isNewClient ? 'NEW_CLIENT' : currentQuote.clientId}
+                      onChange={e => handleClientSelection(e.target.value)}
+                    >
+                      <option value="">اختر الزبون من القائمة...</option>
+                      <option value="NEW_CLIENT" className="text-blue-600 font-black">+ زبون جديد (إضافة سريعة)</option>
+                      {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-slate-400 mr-1 uppercase">تاريخ العرض</label>
+                    <input type="date" className="w-full p-4 bg-white border border-slate-200 rounded-2xl font-bold" value={currentQuote.date} onChange={e => setCurrentQuote({...currentQuote, date: e.target.value})} />
+                  </div>
                 </div>
-                <div>
-                   <label className="text-xs font-bold text-slate-500 block mb-1">تاريخ العرض</label>
-                   <input type="date" className="w-full p-3 bg-white border border-slate-300 rounded-xl text-slate-900" value={currentQuote.date} onChange={e => setCurrentQuote({...currentQuote, date: e.target.value})} />
-                </div>
+
+                {/* حقول الزبون الجديد */}
+                {isNewClient && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-slate-200 animate-in slide-in-from-top-2 duration-300">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-blue-600 uppercase flex items-center gap-1">اسم الزبون الكامل</label>
+                      <input 
+                        type="text" 
+                        placeholder="أدخل الاسم..." 
+                        className="w-full p-3.5 bg-white border border-blue-200 rounded-xl font-bold text-sm"
+                        value={newClientData.name}
+                        onChange={e => setNewClientData({...newClientData, name: e.target.value})}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase flex items-center gap-1">رقم الهاتف <Phone size={10}/></label>
+                      <input 
+                        type="text" 
+                        placeholder="05..." 
+                        className="w-full p-3.5 bg-white border border-slate-200 rounded-xl font-bold text-sm"
+                        value={newClientData.phone}
+                        onChange={e => setNewClientData({...newClientData, phone: e.target.value})}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase flex items-center gap-1">العنوان <MapPin size={10}/></label>
+                      <input 
+                        type="text" 
+                        placeholder="المدينة..." 
+                        className="w-full p-3.5 bg-white border border-slate-200 rounded-xl font-bold text-sm"
+                        value={newClientData.address}
+                        onChange={e => setNewClientData({...newClientData, address: e.target.value})}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {/* CALCULATOR AREA */}
-              <div className="bg-blue-50/50 border border-blue-100 p-6 rounded-2xl">
-                <h4 className="flex items-center gap-2 font-bold text-blue-800 mb-4"><Calculator size={20}/> حاسبة المقاسات</h4>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500">النوع</label>
-                    <select className="w-full p-2 rounded-lg border border-slate-300 bg-white text-slate-900 text-sm" value={itemForm.type} onChange={e => setItemForm({...itemForm, type: e.target.value})}>
+              <div className="bg-white border-2 border-slate-100 p-8 rounded-[32px] shadow-sm">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase">نوع الهيكل</label>
+                    <select className="w-full p-3.5 rounded-2xl border border-slate-200 bg-slate-50 font-bold" value={itemForm.type} onChange={e => setItemForm({...itemForm, type: e.target.value})}>
                       {WINDOW_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </div>
-                   <div>
-                    <label className="text-[10px] font-bold text-slate-500">المادة</label>
-                    <select className="w-full p-2 rounded-lg border border-slate-300 bg-white text-slate-900 text-sm" value={itemForm.profileType} onChange={e => setItemForm({...itemForm, profileType: e.target.value as any})}>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase">المادة (Profile)</label>
+                    <select className="w-full p-3.5 rounded-2xl border border-slate-200 bg-slate-50 font-bold" value={itemForm.profileType} onChange={e => setItemForm({...itemForm, profileType: e.target.value as any})}>
                       {PROFILE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </div>
-                   <div>
-                    <label className="text-[10px] font-bold text-slate-500">اللون</label>
-                     <input type="text" className="w-full p-2 rounded-lg border border-slate-300 bg-white text-slate-900 text-sm" value={itemForm.color} onChange={e => setItemForm({...itemForm, color: e.target.value})} />
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase">العرض (سم)</label>
+                    <input type="number" className="w-full p-3.5 rounded-2xl border border-slate-200 font-black text-center" value={itemForm.width} onChange={e => setItemForm({...itemForm, width: Number(e.target.value)})} />
                   </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500">الزجاج</label>
-                    <select className="w-full p-2 rounded-lg border border-slate-300 bg-white text-slate-900 text-sm" value={itemForm.glassType} onChange={e => setItemForm({...itemForm, glassType: e.target.value})}>
-                      {GLASS_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase">الارتفاع (سم)</label>
+                    <input type="number" className="w-full p-3.5 rounded-2xl border border-slate-200 font-black text-center" value={itemForm.height} onChange={e => setItemForm({...itemForm, height: Number(e.target.value)})} />
                   </div>
                 </div>
-                <div className="grid grid-cols-3 md:grid-cols-6 gap-4 items-end">
-                   <div className="col-span-1">
-                      <label className="text-[10px] font-bold text-slate-500">العرض (cm)</label>
-                      <input type="number" className="w-full p-2 rounded-lg border border-slate-300 bg-white text-slate-900 text-center font-bold" value={itemForm.width} onChange={e => setItemForm({...itemForm, width: Number(e.target.value)})} />
+
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 items-end border-t border-slate-50 pt-8">
+                   <div className="space-y-2"><label className="text-[10px] font-black text-blue-600 uppercase flex items-center gap-1"><Package size={12}/> المواد الأولية</label><input type="number" readOnly className="w-full p-3.5 bg-blue-50 border border-blue-100 rounded-2xl text-sm font-black text-blue-700 text-center" value={itemForm.materialPrice} /></div>
+                   <div className="space-y-2"><label className="text-[10px] font-black text-amber-600 uppercase">أكسسوارات</label><input type="number" className="w-full p-3.5 bg-white border border-slate-300 rounded-2xl text-sm font-black text-amber-700 text-center" value={itemForm.accessoryPrice} onChange={e => setItemForm({...itemForm, accessoryPrice: Number(e.target.value)})} /></div>
+                   <div className="space-y-2"><label className="text-[10px] font-black text-slate-600 uppercase"><Wrench size={12}/> ورشة وتصنيع</label><input type="number" className="w-full p-3.5 bg-white border border-slate-300 rounded-2xl text-sm font-black text-slate-800 text-center" value={itemForm.fabricationPrice} onChange={e => setItemForm({...itemForm, fabricationPrice: Number(e.target.value)})} /></div>
+                   <div className="space-y-2"><label className="text-[10px] font-black text-slate-600 uppercase"><Truck size={12}/> نقل وتوصيل</label><input type="number" className="w-full p-3.5 bg-white border border-slate-300 rounded-2xl text-sm font-black text-slate-800 text-center" value={itemForm.transportPrice} onChange={e => setItemForm({...itemForm, transportPrice: Number(e.target.value)})} /></div>
+                   <div className="space-y-2"><label className="text-[10px] font-black text-slate-600 uppercase">تركيب</label><input type="number" className="w-full p-3.5 bg-white border border-slate-300 rounded-2xl text-sm font-black text-slate-800 text-center" value={itemForm.installationPrice} onChange={e => setItemForm({...itemForm, installationPrice: Number(e.target.value)})} /></div>
+                </div>
+
+                <div className="flex flex-col md:flex-row justify-between items-center mt-8 p-6 bg-slate-900 rounded-[28px] shadow-xl gap-6">
+                   <div className="flex gap-6 items-center">
+                      <div className="flex items-center gap-3">
+                        <span className="text-[10px] font-black text-white/40 uppercase">الكمية:</span>
+                        <input type="number" className="w-24 p-3 bg-white/10 border border-white/20 rounded-xl text-center font-black text-white" value={itemForm.quantity} onChange={e => setItemForm({...itemForm, quantity: Number(e.target.value)})} />
+                      </div>
+                      <div className="text-right">
+                         <p className="text-[10px] font-black text-white/40 uppercase">سعر الوحدة</p>
+                         <p className="text-2xl font-black text-white">{itemForm.unitPrice?.toLocaleString()} {CURRENCY}</p>
+                      </div>
                    </div>
-                   <div className="col-span-1">
-                      <label className="text-[10px] font-bold text-slate-500">الارتفاع (cm)</label>
-                      <input type="number" className="w-full p-2 rounded-lg border border-slate-300 bg-white text-slate-900 text-center font-bold" value={itemForm.height} onChange={e => setItemForm({...itemForm, height: Number(e.target.value)})} />
-                   </div>
-                   <div className="col-span-1">
-                      <label className="text-[10px] font-bold text-slate-500">الكمية</label>
-                      <input type="number" className="w-full p-2 rounded-lg border border-slate-300 bg-white text-slate-900 text-center font-bold" value={itemForm.quantity} onChange={e => setItemForm({...itemForm, quantity: Number(e.target.value)})} />
-                   </div>
-                   <div className="col-span-2">
-                      <label className="text-[10px] font-bold text-slate-500">السعر التقديري (للوحدة)</label>
-                      <input type="number" className="w-full p-2 rounded-lg border border-slate-300 bg-white text-slate-900 text-center font-bold text-green-600" value={itemForm.unitPrice} onChange={e => setItemForm({...itemForm, unitPrice: Number(e.target.value)})} />
-                   </div>
-                   <button onClick={addItem} className="bg-blue-600 text-white p-2 rounded-lg font-bold text-sm hover:bg-blue-700">إضافة</button>
+                   <button onClick={addItem} className="w-full md:w-auto bg-blue-600 text-white px-10 py-4 rounded-2xl font-black hover:bg-blue-700 transition-all shadow-lg flex items-center justify-center gap-2">
+                     <Plus size={20} /> إضافة للعرض
+                   </button>
                 </div>
               </div>
 
-              {/* Items List */}
-              <div className="border rounded-xl overflow-hidden">
-                <table className="w-full text-sm text-right bg-white">
-                  <thead className="bg-slate-50 text-slate-500 font-bold text-xs">
-                    <tr>
-                      <th className="p-3">العنصر</th>
-                      <th className="p-3">الأبعاد</th>
-                      <th className="p-3">العدد</th>
-                      <th className="p-3">السعر</th>
-                      <th className="p-3">الإجمالي</th>
-                      <th className="p-3"></th>
-                    </tr>
+              <div className="border border-slate-100 rounded-[32px] overflow-hidden bg-white shadow-sm">
+                <table className="w-full text-xs text-right">
+                  <thead className="bg-slate-50 text-slate-400 font-black uppercase border-b border-slate-100">
+                    <tr><th className="p-4">القطعة</th><th className="p-4 text-center">الأبعاد</th><th className="p-4 text-center">الورشة+المواد</th><th className="p-4 text-center">أكسسوارات</th><th className="p-4 text-center">نقل/تركيب</th><th className="p-4 text-center">العدد</th><th className="p-4">الإجمالي</th><th className="p-4"></th></tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-slate-50">
                     {currentQuote.items?.map((item, idx) => (
-                      <tr key={idx} className="border-t border-slate-50">
-                        <td className="p-3 font-bold">{item.type} <span className="text-xs text-slate-400 block">{item.profileType} - {item.glassType}</span></td>
-                        <td className="p-3" dir="ltr">{item.width} x {item.height}</td>
-                        <td className="p-3">{item.quantity}</td>
-                        <td className="p-3">{item.unitPrice.toLocaleString()}</td>
-                        <td className="p-3 font-bold text-blue-600">{item.totalPrice.toLocaleString()}</td>
-                        <td className="p-3"><button onClick={() => removeItem(idx)} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button></td>
+                      <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                        <td className="p-4 font-black text-slate-800">{item.type}</td>
+                        <td className="p-4 text-center font-mono text-slate-500" dir="ltr">{item.width} x {item.height}</td>
+                        <td className="p-4 text-center font-bold text-blue-600">{(item.materialPrice + item.fabricationPrice).toLocaleString()}</td>
+                        <td className="p-4 text-center text-amber-600 font-bold">{item.accessoryPrice.toLocaleString()}</td>
+                        <td className="p-4 text-center text-slate-500 font-bold">{(item.transportPrice + item.installationPrice).toLocaleString()}</td>
+                        <td className="p-4 text-center font-black text-slate-800">{item.quantity}</td>
+                        <td className="p-4 font-black text-slate-900">{item.totalPrice.toLocaleString()}</td>
+                        <td className="p-4 text-center"><button onClick={() => removeItem(idx)} className="p-2 text-red-300 hover:text-red-600 transition-all"><Trash2 size={18}/></button></td>
                       </tr>
                     ))}
-                    {(!currentQuote.items || currentQuote.items.length === 0) && <tr><td colSpan={6} className="p-6 text-center text-slate-400">لم يتم إضافة عناصر بعد</td></tr>}
                   </tbody>
                 </table>
               </div>
-
-              <div className="flex justify-end gap-8 text-lg font-bold border-t pt-4">
-                 <span>المجموع:</span>
-                 <span className="text-blue-600">{currentQuote.items?.reduce((s, i) => s + i.totalPrice, 0).toLocaleString()} {CURRENCY}</span>
-              </div>
             </div>
 
-            <div className="p-4 border-t bg-slate-50 flex justify-end gap-3">
-               <button onClick={() => setIsModalOpen(false)} className="px-6 py-2 bg-white border rounded-xl font-bold text-slate-600">إلغاء</button>
-               <button onClick={handleSaveQuote} className="px-6 py-2 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700">حفظ العرض</button>
+            <div className="p-8 border-t bg-slate-50 flex flex-col md:flex-row justify-between items-center gap-6">
+               <div className="flex gap-10">
+                  <div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">المجموع الصافي (HT)</p>
+                    <p className="text-xl font-bold text-slate-700">{currentQuote.items?.reduce((s, i) => s + i.totalPrice, 0).toLocaleString()} {CURRENCY}</p>
+                  </div>
+                  <div className="border-r border-slate-200 pr-10">
+                    <p className="text-[10px] font-black text-blue-600 uppercase mb-1">الإجمالي TTC (19%)</p>
+                    <p className="text-3xl font-black text-blue-600">
+                      {Math.ceil((currentQuote.items?.reduce((s, i) => s + i.totalPrice, 0) || 0) * 1.19).toLocaleString()} <span className="text-sm font-normal">{CURRENCY}</span>
+                    </p>
+                  </div>
+               </div>
+               <div className="flex gap-4 w-full md:w-auto">
+                 <button onClick={() => setIsModalOpen(false)} className="px-6 py-2.5 bg-white border border-slate-200 rounded-xl font-black text-slate-600 hover:bg-slate-100 transition-all">إلغاء</button>
+                 <button 
+                  onClick={handleSaveQuote} 
+                  disabled={isSaving} 
+                  className="px-8 py-2.5 bg-blue-600 text-white rounded-xl font-black shadow-lg hover:bg-blue-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                 >
+                   {isSaving ? <Loader2 className="animate-spin" size={18}/> : <Save size={18}/>}
+                   حفظ
+                 </button>
+               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Invoice Conversion Modal */}
-      {isConvertModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-6 animate-in zoom-in duration-200">
-              <h3 className="text-lg font-bold text-slate-800 mb-4 text-center">إنشاء فاتورة من العرض</h3>
-              <p className="text-sm text-slate-500 text-center mb-6">
-                 سيتم نسخ جميع البنود والأسعار إلى فاتورة جديدة. يرجى اختيار نوع الفاتورة:
-              </p>
+      {isConvertModalOpen && selectedQuoteForConversion && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+           <div className="bg-white w-full max-w-sm rounded-[40px] shadow-2xl p-10 animate-in zoom-in duration-200 text-center">
+              <div className="w-20 h-20 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-sm"><FileCheck size={40} /></div>
+              <h3 className="text-xl font-black text-slate-800 mb-2">تحويل العرض لفاتورة</h3>
+              <p className="text-xs text-slate-400 mb-8">يرجى اختيار نوع الفاتورة المطلوبة لتنفيذ العملية.</p>
               
-              <div className="space-y-3 mb-6">
-                <button 
-                  onClick={() => setConversionType('ضريبية')}
-                  className={`w-full p-4 rounded-xl border-2 flex items-center gap-3 transition-all ${conversionType === 'ضريبية' ? 'border-blue-500 bg-blue-50' : 'border-slate-100 hover:border-blue-200'}`}
-                >
-                  <CheckCircle2 size={24} className={conversionType === 'ضريبية' ? 'text-blue-600' : 'text-slate-300'} />
-                  <div className="text-right">
-                     <p className="font-bold text-slate-800">فاتورة نهائية (Facture)</p>
-                     <p className="text-[10px] text-slate-400">سيتم تغيير حالة العرض إلى "مؤكد"</p>
-                  </div>
+              <div className="space-y-4 mb-10">
+                <button onClick={() => setConversionType('ضريبية')} className={`w-full p-5 rounded-[24px] border-2 flex items-center gap-4 transition-all ${conversionType === 'ضريبية' ? 'border-blue-600 bg-blue-50 shadow-md' : 'border-slate-100 hover:border-blue-200'}`}>
+                  <CheckCircle2 size={24} className={conversionType === 'ضريبية' ? 'text-blue-600' : 'text-slate-200'} /><div className="text-right"><p className="font-black text-slate-800 text-sm">فاتورة نهائية</p><p className="text-[10px] text-slate-400">تحويل رسمي للإدارة المالية</p></div>
                 </button>
-
-                <button 
-                  onClick={() => setConversionType('شكلية')}
-                  className={`w-full p-4 rounded-xl border-2 flex items-center gap-3 transition-all ${conversionType === 'شكلية' ? 'border-amber-500 bg-amber-50' : 'border-slate-100 hover:border-amber-200'}`}
-                >
-                  <FileText size={24} className={conversionType === 'شكلية' ? 'text-amber-600' : 'text-slate-300'} />
-                  <div className="text-right">
-                     <p className="font-bold text-slate-800">فاتورة شكلية (Proforma)</p>
-                     <p className="text-[10px] text-slate-400">يبقى العرض متاحاً للتعديل</p>
-                  </div>
+                <button onClick={() => setConversionType('شكلية')} className={`w-full p-5 rounded-[24px] border-2 flex items-center gap-4 transition-all ${conversionType === 'شكلية' ? 'border-amber-500 bg-amber-50 shadow-md' : 'border-slate-100 hover:border-amber-200'}`}>
+                  <ArrowRightCircle size={24} className={conversionType === 'شكلية' ? 'text-amber-600' : 'text-slate-200'} /><div className="text-right"><p className="font-black text-slate-800 text-sm">شكلية + فتح طلبية</p><p className="text-[10px] text-slate-400">إنشاء سجل فوري لطلبية العمل</p></div>
                 </button>
               </div>
 
-              <div className="flex gap-3">
-                 <button onClick={() => setIsConvertModalOpen(false)} className="flex-1 py-3 border border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-slate-50">إلغاء</button>
-                 <button onClick={handleProcessConversion} className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/20">تأكيد الإنشاء</button>
+              <div className="flex gap-4">
+                <button onClick={() => setIsConvertModalOpen(false)} className="flex-1 py-4 border border-slate-200 rounded-2xl font-black text-slate-400 hover:bg-slate-50 transition-all">تراجع</button>
+                <button onClick={handleProcessConversion} disabled={convertingId !== null} className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-black shadow-xl hover:bg-blue-700 transition-all flex justify-center items-center gap-2">
+                  {convertingId !== null ? <Loader2 className="animate-spin" size={20}/> : 'تأكيد العملية'}
+                </button>
               </div>
            </div>
         </div>

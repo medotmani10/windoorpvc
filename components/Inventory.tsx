@@ -29,8 +29,22 @@ const Inventory: React.FC = () => {
 
   async function fetchMaterials() {
     setLoading(true);
+    // Fetch materials and map snake_case columns to camelCase Material interface
     const { data } = await supabase.from('materials').select('*').order('quantity', { ascending: true });
-    if (data) setMaterials(data as any);
+    if (data) {
+      const mapped: Material[] = data.map((m: any) => ({
+        id: m.id,
+        name: m.name,
+        category: m.category,
+        unit: m.unit,
+        quantity: m.quantity,
+        minQuantity: m.min_quantity,
+        costPrice: m.cost_price,
+        sellingPrice: m.selling_price,
+        supplier: m.supplier
+      }));
+      setMaterials(mapped);
+    }
     setLoading(false);
   }
 

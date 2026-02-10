@@ -9,7 +9,8 @@ import Finance from './components/Finance';
 import Quotes from './components/Quotes';
 import Inventory from './components/Inventory';
 import Reports from './components/Reports';
-import Settings from './components/Settings'; // New Component
+import Settings from './components/Settings';
+import Transport from './components/Transport'; // إضافة استيراد مكون النقل
 import Auth from './components/Auth';
 import { Menu, LogOut, Loader2 } from 'lucide-react';
 import { supabase } from './supabase';
@@ -54,6 +55,7 @@ const App: React.FC = () => {
       case 'inventory': return <Inventory />;
       case 'clients': return <Clients />;
       case 'workers': return <Workers />;
+      case 'transport': return <Transport />; // إضافة حالة النقل هنا
       case 'finance': return <Finance />;
       case 'reports': return <Reports />;
       case 'settings': return <Settings onUpdate={fetchSettings} />;
@@ -111,6 +113,7 @@ const App: React.FC = () => {
                 {activeTab === 'inventory' && 'المخزون'}
                 {activeTab === 'clients' && 'الزبائن'}
                 {activeTab === 'workers' && 'الموارد البشرية'}
+                {activeTab === 'transport' && 'خدمات النقل'}
                 {activeTab === 'finance' && 'الإدارة المالية'}
                 {activeTab === 'reports' && 'التقارير'}
                 {activeTab === 'settings' && 'إعدادات النظام'}

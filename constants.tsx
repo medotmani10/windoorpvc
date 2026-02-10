@@ -5,22 +5,24 @@ import {
   Ruler, 
   Warehouse, 
   Users, 
-  Hammer, 
+  ShoppingCart, 
   DollarSign, 
   FileText, 
   ClipboardList,
-  Settings
+  Settings,
+  Truck
 } from 'lucide-react';
 
 export const CURRENCY = 'د.ج';
 
 export const NAV_ITEMS = [
   { id: 'dashboard', label: 'لوحة القيادة', icon: <LayoutDashboard size={20} /> },
-  { id: 'quotes', label: 'حساب Devis', icon: <Ruler size={20} /> }, // Core feature
-  { id: 'projects', label: 'الورشات (المشاريع)', icon: <Hammer size={20} /> },
+  { id: 'quotes', label: 'حساب Devis', icon: <Ruler size={20} /> },
+  { id: 'projects', label: 'الطلبيات (Orders)', icon: <ShoppingCart size={20} /> },
   { id: 'inventory', label: 'المخزون (Stock)', icon: <Warehouse size={20} /> },
   { id: 'clients', label: 'الزبائن', icon: <Users size={20} /> },
   { id: 'workers', label: 'العمال والحضور', icon: <ClipboardList size={20} /> },
+  { id: 'transport', label: 'خدمات النقل', icon: <Truck size={20} /> },
   { id: 'finance', label: 'المالية', icon: <DollarSign size={20} /> },
   { id: 'reports', label: 'التقارير', icon: <FileText size={20} /> },
   { id: 'settings', label: 'إعدادات المؤسسة', icon: <Settings size={20} /> },

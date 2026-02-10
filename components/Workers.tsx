@@ -8,22 +8,19 @@ import { CURRENCY } from '../constants';
 const Workers: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'list' | 'attendance' | 'finance'>('list');
   const [workers, setWorkers] = useState<Worker[]>([]);
-  const [projects, setProjects] = useState<any[]>([]);
+  const [projects, setProjects] = useState<any[]>([]); // These will now be "Orders"
   const [attendanceData, setAttendanceData] = useState<Attendance[]>([]);
   const [payments, setPayments] = useState<WorkerPayment[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // Modal States
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedWorkerForPayment, setSelectedWorkerForPayment] = useState<Worker | null>(null);
 
-  // Date for attendance
   const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
 
-  // Form Data
   const initialFormState = {
     name: '',
     trade: '',
@@ -46,27 +43,20 @@ const Workers: React.FC = () => {
   async function fetchAllData() {
     try {
       setLoading(true);
-      
-      // 1. Fetch Workers
       const { data: workersData, error: wError } = await supabase.from('workers').select('*').order('name');
       if (wError) throw wError;
 
-      // 2. Fetch Projects for dropdown
       const { data: projectsData, error: pError } = await supabase.from('projects').select('id, name').order('created_at', { ascending: false });
       if (pError) throw pError;
       if (projectsData) setProjects(projectsData);
 
-      // 3. Fetch Attendance (Summary for calculation)
       const { data: attData, error: aError } = await supabase.from('attendance').select('*');
       if (aError) throw aError;
 
-      // 4. Fetch Payments
       const { data: payData, error: payError } = await supabase.from('worker_payments').select('*');
       if (payError) throw payError;
 
-      // Process and Map Data
       const processedWorkers: Worker[] = workersData.map((w: any) => {
-        // Calculate Attendance Days (Full day = 1, Half = 0.5)
         const workerAtt = attData.filter((a: any) => a.worker_id === w.id);
         const totalDaysWorked = workerAtt.reduce((sum: number, a: any) => {
           let dayVal = 0;
@@ -75,9 +65,7 @@ const Workers: React.FC = () => {
           return sum + dayVal;
         }, 0);
 
-        // Calculate Totals
         const totalEarned = totalDaysWorked * (w.daily_rate || 0);
-        
         const workerPayments = payData.filter((p: any) => p.worker_id === w.id);
         const totalPaid = workerPayments.reduce((sum: number, p: any) => sum + Number(p.amount), 0);
 
@@ -113,8 +101,6 @@ const Workers: React.FC = () => {
     }
   }
 
-  // --- Worker CRUD ---
-
   const handleSaveWorker = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -138,7 +124,7 @@ const Workers: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('هل أنت متأكد من حذف هذا العامل؟ سيتم حذف جميع سجلات الحضور والمدفوعات المرتبطة به.')) return;
+    if (!window.confirm('هل أنت متأكد من حذف هذا العامل؟')) return;
     try {
       const { error } = await supabase.from('workers').delete().eq('id', id);
       if (error) throw error;
@@ -166,15 +152,11 @@ const Workers: React.FC = () => {
     setEditingId(null);
   };
 
-  // --- Attendance Logic ---
-
   const toggleAttendance = async (workerId: string, type: 'morning' | 'evening', currentValue: boolean) => {
     try {
-      // Check if record exists for this day
       const existingRecord = attendanceData.find(a => a.workerId === workerId && a.date === attendanceDate);
 
       if (existingRecord) {
-        // Update existing
         const updatePayload = type === 'morning' ? { morning: !currentValue } : { evening: !currentValue };
         const { error } = await supabase
           .from('attendance')
@@ -182,7 +164,6 @@ const Workers: React.FC = () => {
           .eq('id', existingRecord.id);
         if (error) throw error;
       } else {
-        // Create new
         const insertPayload = {
           worker_id: workerId,
           date: attendanceDate,
@@ -192,13 +173,11 @@ const Workers: React.FC = () => {
         const { error } = await supabase.from('attendance').insert([insertPayload]);
         if (error) throw error;
       }
-      fetchAllData(); // Refresh to update UI and calculations
+      fetchAllData();
     } catch (error) {
       console.error('Attendance update failed', error);
     }
   };
-
-  // --- Payment Logic ---
 
   const openPaymentModal = (worker: Worker) => {
     setSelectedWorkerForPayment(worker);
@@ -230,27 +209,26 @@ const Workers: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Top Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
            <p className="text-xs text-slate-400 mb-1">إجمالي العمال</p>
            <p className="text-xl font-bold text-slate-800">{workers.length}</p>
         </div>
         <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
-           <p className="text-xs text-slate-400 mb-1">إجمالي المستحقات (لهم)</p>
+           <p className="text-xs text-slate-400 mb-1">مستحقات العمال (لهم)</p>
            <p className="text-xl font-bold text-red-600">
              {workers.reduce((acc, w) => acc + (w.balance && w.balance > 0 ? w.balance : 0), 0).toLocaleString()} <span className="text-xs">{CURRENCY}</span>
            </p>
         </div>
          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
-           <p className="text-xs text-slate-400 mb-1">إجمالي السلف (علينا)</p>
+           <p className="text-xs text-slate-400 mb-1">الديون المستردة (سلف)</p>
            <p className="text-xl font-bold text-green-600">
              {Math.abs(workers.reduce((acc, w) => acc + (w.balance && w.balance < 0 ? w.balance : 0), 0)).toLocaleString()} <span className="text-xs">{CURRENCY}</span>
            </p>
         </div>
          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between">
            <div>
-             <p className="text-xs text-slate-400 mb-1">الحضور اليوم</p>
+             <p className="text-xs text-slate-400 mb-1">المنجزين اليوم</p>
              <p className="text-xl font-bold text-blue-600">
                 {attendanceData.filter(a => a.date === new Date().toISOString().split('T')[0] && (a.morning || a.evening)).length}
              </p>
@@ -259,36 +237,32 @@ const Workers: React.FC = () => {
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="flex bg-white p-1.5 rounded-2xl border border-slate-100 w-fit">
         <button 
           onClick={() => setActiveTab('list')}
           className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'list' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
         >
-          <HardHat size={16} className="inline-block ml-2"/> قائمة العمال
+          <HardHat size={16} className="inline-block ml-2"/> قائمة الفريق
         </button>
         <button 
           onClick={() => setActiveTab('attendance')}
           className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'attendance' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
         >
-          <CalendarCheck size={16} className="inline-block ml-2"/> تسجيل الحضور
+          <CalendarCheck size={16} className="inline-block ml-2"/> سجل الحضور
         </button>
         <button 
           onClick={() => setActiveTab('finance')}
           className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'finance' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
         >
-          <Coins size={16} className="inline-block ml-2"/> الحسابات المالية
+          <Coins size={16} className="inline-block ml-2"/> حسابات الأجور
         </button>
       </div>
 
-      {/* Content Area */}
       <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden min-h-[400px]">
-        
-        {/* VIEW 1: List */}
         {activeTab === 'list' && (
           <div className="p-6">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="font-bold text-slate-800">سجل العمال والموظفين</h3>
+              <h3 className="font-bold text-slate-800">إدارة فريق العمل</h3>
               <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700">
                 <UserPlus size={18} /> إضافة عامل
               </button>
@@ -300,9 +274,8 @@ const Workers: React.FC = () => {
                     <tr>
                       <th className="px-6 py-4 rounded-r-xl">الاسم</th>
                       <th className="px-6 py-4">التخصص</th>
-                      <th className="px-6 py-4">المشروع الحالي</th>
+                      <th className="px-6 py-4">الطلبية الحالية</th>
                       <th className="px-6 py-4">اليومية</th>
-                      <th className="px-6 py-4">الهاتف</th>
                       <th className="px-6 py-4">الحالة</th>
                       <th className="px-6 py-4 rounded-l-xl">الإجراءات</th>
                     </tr>
@@ -312,9 +285,8 @@ const Workers: React.FC = () => {
                       <tr key={w.id} className="hover:bg-slate-50/50">
                         <td className="px-6 py-4 font-bold text-slate-800">{w.name}</td>
                         <td className="px-6 py-4 text-slate-600">{w.trade}</td>
-                        <td className="px-6 py-4 text-blue-600 font-medium">{w.currentProject || 'غير معين'}</td>
+                        <td className="px-6 py-4 text-blue-600 font-medium">{w.currentProject || 'ورشة عامة'}</td>
                         <td className="px-6 py-4 font-bold">{w.dailyRate.toLocaleString()} {CURRENCY}</td>
-                        <td className="px-6 py-4 font-mono text-xs">{w.phone}</td>
                         <td className="px-6 py-4">
                           {w.isActive ? <span className="text-green-600 text-xs font-bold bg-green-50 px-2 py-1 rounded-full">نشط</span> : <span className="text-slate-400 text-xs bg-slate-100 px-2 py-1 rounded-full">غير نشط</span>}
                         </td>
@@ -331,11 +303,10 @@ const Workers: React.FC = () => {
           </div>
         )}
 
-        {/* VIEW 2: Attendance */}
         {activeTab === 'attendance' && (
           <div className="p-6">
              <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-              <h3 className="font-bold text-slate-800">سجل الحضور اليومي</h3>
+              <h3 className="font-bold text-slate-800">حضور اليوم</h3>
               <div className="relative">
                 <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200">
                   <span className="text-xs font-bold text-slate-500 px-2">تاريخ:</span>
@@ -395,19 +366,18 @@ const Workers: React.FC = () => {
           </div>
         )}
 
-        {/* VIEW 3: Finance */}
         {activeTab === 'finance' && (
           <div className="p-6">
-            <h3 className="font-bold text-slate-800 mb-6">الحسابات والمستحقات المالية</h3>
+            <h3 className="font-bold text-slate-800 mb-6">مستحقات فريق العمل</h3>
              <div className="overflow-x-auto">
               <table className="w-full text-sm text-right">
                 <thead className="bg-slate-50 text-slate-500 uppercase text-xs font-bold">
                   <tr>
                     <th className="px-6 py-4 rounded-r-xl">العامل</th>
                     <th className="px-6 py-4">أيام العمل</th>
-                    <th className="px-6 py-4 text-blue-600">المستحقات (له)</th>
-                    <th className="px-6 py-4 text-amber-600">المدفوعات (عليه)</th>
-                    <th className="px-6 py-4">الرصيد الصافي</th>
+                    <th className="px-6 py-4 text-blue-600">المستحق الإجمالي</th>
+                    <th className="px-6 py-4 text-amber-600">المدفوع</th>
+                    <th className="px-6 py-4">الرصيد</th>
                     <th className="px-6 py-4 rounded-l-xl">إجراءات</th>
                   </tr>
                 </thead>
@@ -427,12 +397,12 @@ const Workers: React.FC = () => {
                           (w.balance || 0) > 0 ? 'bg-red-50 text-red-600' : 
                           (w.balance || 0) < 0 ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-500' 
                         }`}>
-                           {(w.balance || 0) > 0 ? `له: ${w.balance?.toLocaleString()}` : (w.balance || 0) < 0 ? `عليه: ${Math.abs(w.balance || 0).toLocaleString()}` : 'خالص'}
+                           {(w.balance || 0) > 0 ? `باقي: ${w.balance?.toLocaleString()}` : (w.balance || 0) < 0 ? `سلفة: ${Math.abs(w.balance || 0).toLocaleString()}` : 'خالص'}
                         </span>
                       </td>
                       <td className="px-6 py-4">
                         <button onClick={() => openPaymentModal(w)} className="bg-slate-800 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-black transition-colors">
-                          تسجيل دفعة
+                          صرف أجر
                         </button>
                       </td>
                     </tr>
@@ -442,52 +412,49 @@ const Workers: React.FC = () => {
             </div>
           </div>
         )}
-
       </div>
 
-      {/* Add/Edit Worker Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6">
+          <div className="bg-white w-full max-md rounded-3xl shadow-2xl p-6">
             <div className="flex justify-between items-center mb-6">
-               <h3 className="font-bold text-slate-800">{editingId ? 'تعديل بيانات' : 'إضافة عامل جديد'}</h3>
+               <h3 className="font-bold text-slate-800">{editingId ? 'تعديل بيانات عامل' : 'إضافة عامل جديد'}</h3>
                <button onClick={closeModal}><X className="text-slate-400 hover:text-slate-600"/></button>
             </div>
             <form onSubmit={handleSaveWorker} className="space-y-4">
               <input required placeholder="اسم العامل" className="w-full p-3 bg-white border border-slate-300 rounded-xl text-slate-900" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
-              <input required placeholder="التخصص" className="w-full p-3 bg-white border border-slate-300 rounded-xl text-slate-900" value={formData.trade} onChange={e => setFormData({...formData, trade: e.target.value})} />
+              <input required placeholder="التخصص (مثلاً: معلم ألمنيوم)" className="w-full p-3 bg-white border border-slate-300 rounded-xl text-slate-900" value={formData.trade} onChange={e => setFormData({...formData, trade: e.target.value})} />
               <div className="grid grid-cols-2 gap-4">
-                 <input required placeholder="الهاتف" className="w-full p-3 bg-white border border-slate-300 rounded-xl text-slate-900" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
-                 <input type="number" required placeholder="اليومية" className="w-full p-3 bg-white border border-slate-300 rounded-xl text-slate-900" value={formData.daily_rate} onChange={e => setFormData({...formData, daily_rate: Number(e.target.value)})} />
+                 <input required placeholder="رقم الهاتف" className="w-full p-3 bg-white border border-slate-300 rounded-xl text-slate-900" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
+                 <input type="number" required placeholder="اليومية (د.ج)" className="w-full p-3 bg-white border border-slate-300 rounded-xl text-slate-900" value={formData.daily_rate} onChange={e => setFormData({...formData, daily_rate: Number(e.target.value)})} />
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-500 mb-1 block">المشروع الحالي</label>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">الطلبية المكلف بها (اختياري)</label>
                 <select 
                   className="w-full p-3 bg-white border border-slate-300 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-900"
                   value={formData.current_project}
                   onChange={e => setFormData({...formData, current_project: e.target.value})}
                 >
-                  <option value="">غير معين (حر)</option>
+                  <option value="">ورشة عامة (غير مخصص لطلبية محددة)</option>
                   {projects.map(p => (
                     <option key={p.id} value={p.name}>{p.name}</option>
                   ))}
                 </select>
               </div>
               <button disabled={saving} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold flex justify-center gap-2">
-                {saving ? <Loader2 className="animate-spin"/> : <Save size={18}/>} حفظ
+                {saving ? <Loader2 className="animate-spin"/> : <Save size={18}/>} حفظ البيانات
               </button>
             </form>
           </div>
         </div>
       )}
 
-      {/* Add Payment Modal */}
       {isPaymentModalOpen && selectedWorkerForPayment && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 animate-in zoom-in duration-200">
             <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
                <div>
-                 <h3 className="font-bold text-slate-800">تسجيل دفعة مالية</h3>
+                 <h3 className="font-bold text-slate-800">صرف مبلغ مالي</h3>
                  <p className="text-xs text-slate-500">للعامل: {selectedWorkerForPayment.name}</p>
                </div>
                <button onClick={() => setIsPaymentModalOpen(false)}><X className="text-slate-400 hover:text-slate-600"/></button>
@@ -507,21 +474,20 @@ const Workers: React.FC = () => {
                 </div>
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-500 mb-1 block">ملاحظات (سلفة / راتب)</label>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">ملاحظات (سلفة / راتب أسبوعي)</label>
                 <textarea className="w-full p-3 bg-white border border-slate-300 rounded-xl text-slate-900" 
-                  value={paymentData.notes} onChange={e => setPaymentData({...paymentData, notes: e.target.value})} placeholder="مثال: سلفة من الراتب..." />
+                  value={paymentData.notes} onChange={e => setPaymentData({...paymentData, notes: e.target.value})} placeholder="مثال: تسوية أسبوعية..." />
               </div>
               <div className="bg-amber-50 p-3 rounded-xl text-xs text-amber-800 border border-amber-100 flex gap-2">
-                 <ArrowUpRight size={16}/> سيتم خصم هذا المبلغ من مستحقات العامل
+                 <ArrowUpRight size={16}/> سيتم تسجيل هذا المصروف وخصمه من رصيد العامل
               </div>
               <button disabled={saving} className="w-full py-3 bg-slate-800 text-white rounded-xl font-bold flex justify-center gap-2 hover:bg-black transition-colors">
-                {saving ? <Loader2 className="animate-spin"/> : <Save size={18}/>} تأكيد الدفع
+                {saving ? <Loader2 className="animate-spin"/> : <Save size={18}/>} تأكيد الصرف
               </button>
             </form>
           </div>
         </div>
       )}
-
     </div>
   );
 };

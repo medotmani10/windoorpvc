@@ -13,7 +13,7 @@ export interface AppSettings {
   address: string;
   phone: string;
   email: string;
-  tax_id?: string; // رقم التعريف الجبائي
+  tax_id?: string;
   footer_text?: string;
 }
 
@@ -27,21 +27,8 @@ export interface Client {
   notes?: string;
   totalProjects: number;
   totalDebt: number;
-  // Computed fields
   totalPaid?: number;
   totalProjectsValue?: number;
-}
-
-export interface Material {
-  id: string;
-  name: string;
-  category: 'profile_alu' | 'profile_pvc' | 'glass' | 'accessory' | 'rubber';
-  unit: 'bar' | 'm2' | 'piece' | 'roll' | 'kg';
-  quantity: number;
-  minQuantity: number;
-  costPrice: number;
-  sellingPrice: number;
-  supplier: string;
 }
 
 export interface QuoteItem {
@@ -53,7 +40,12 @@ export interface QuoteItem {
   height: number;
   quantity: number;
   glassType: string;
-  unitPrice: number;
+  materialPrice: number;    
+  accessoryPrice: number;   
+  fabricationPrice: number; 
+  transportPrice: number;   
+  installationPrice: number; 
+  unitPrice: number;        
   totalPrice: number;
   description?: string;
 }
@@ -77,7 +69,7 @@ export interface Project {
   id: string;
   name: string;
   clientId?: string;
-  client: string; // Used as client name
+  client: string;
   clientName?: string;
   status: ProjectStatus | string;
   startDate?: string;
@@ -93,13 +85,11 @@ export interface Project {
 export interface Worker {
   id: string;
   name: string;
-  role?: string;
   trade?: string;
   phone: string;
   dailyRate: number;
   isActive: boolean;
   currentProject?: string;
-  // Computed fields
   totalDaysWorked?: number;
   totalEarned?: number;
   totalPaid?: number;
@@ -144,13 +134,12 @@ export interface InvoiceItem {
   unitPrice: number;
   total: number;
   invoice_id?: string;
-  unit_price?: number;
 }
 
 export interface Invoice {
   id: string;
   type: InvoiceType;
-  client: string; // Client name
+  client: string;
   clientId?: string;
   amount: number;
   tax?: number;
@@ -162,6 +151,27 @@ export interface Invoice {
   rawDate?: string;
 }
 
+export interface Transport {
+  id: string;
+  driverName: string;
+  vehicleType: string;
+  phone: string;
+  balance: number;
+  status: string;
+}
+
+export interface Material {
+  id: string;
+  name: string;
+  category: string;
+  unit: string;
+  quantity: number;
+  minQuantity: number;
+  costPrice: number;
+  sellingPrice: number;
+  supplier: string;
+}
+
 export interface Purchase {
   id: string;
   project: string;
@@ -169,28 +179,18 @@ export interface Purchase {
   quantity: string | number;
   total: number;
   supplier: string;
-  status: string;
+  status: 'تم الطلب' | 'قيد الشحن' | 'تم الاستلام';
   date: string;
 }
 
 export interface Supplier {
   id: string;
   name: string;
-  phone?: string;
-  address?: string;
-  materialType?: string;
+  phone: string;
+  address: string;
+  materialType: string;
   notes?: string;
-  // Computed
   totalPurchases?: number;
   totalPaid?: number;
   balance?: number;
-}
-
-export interface Transport {
-  id: string;
-  vehicleType: string;
-  plateNumber: string;
-  driverName: string;
-  phone: string;
-  status: string;
 }

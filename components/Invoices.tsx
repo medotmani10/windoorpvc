@@ -194,14 +194,12 @@ const Invoices: React.FC = () => {
   };
 
   const handlePrintInvoice = async (invoiceId: string) => {
-    // Open window immediately to satisfy popup blockers
     const printWindow = window.open('', '_blank', 'width=900,height=1000');
     if (!printWindow) {
       alert('تم حظر النافذة المنبثقة. يرجى السماح بالنوافذ المنبثقة لهذا الموقع.');
       return;
     }
 
-    // Set initial loading state content
     printWindow.document.write(`
       <html dir="rtl">
         <head><title>جاري التحميل...</title></head>
@@ -246,10 +244,10 @@ const Invoices: React.FC = () => {
           <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap" rel="stylesheet">
           <style>
             body { font-family: 'Tajawal', sans-serif; padding: 40px; color: #1e293b; max-width: 800px; margin: 0 auto; background: white; }
-            .header-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; }
+            .header-container { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; }
             .company-info h1 { margin: 0; color: #000; font-size: 24px; font-weight: 900; }
             .company-info p { margin: 5px 0; font-size: 12px; color: #64748b; }
-            .logo-img { height: 60px; object-fit: contain; margin-bottom: 10px; }
+            .logo-img { max-height: 80px; width: auto; object-fit: contain; margin-bottom: 15px; display: block; }
             .invoice-meta { text-align: left; }
             .invoice-meta h2 { margin: 0; color: #fbbf24; font-size: 20px; text-transform: uppercase; font-weight: 900; }
             .invoice-meta p { margin: 5px 0; font-size: 12px; color: #64748b; }
@@ -268,7 +266,7 @@ const Invoices: React.FC = () => {
           </style>
         </head>
         <body>
-          <div class="header-top">
+          <div class="header-container">
             <div class="company-info">
               ${company.logo_url ? `<img src="${company.logo_url}" class="logo-img" alt="Logo" />` : ''}
               <h1>${company.company_name}</h1>
@@ -284,8 +282,8 @@ const Invoices: React.FC = () => {
           </div>
 
           <div class="client-box">
-            <h3 style="margin:0 0 10px;font-size:14px;color:#64748b;">بيانات العميل</h3>
-            <p style="margin:0;font-weight:bold;">${client?.name || 'عميل عام'}</p>
+            <h3 style="margin:0 0 10px;font-size:14px;color:#64748b;">إلى السيد / السادة:</h3>
+            <p style="margin:0;font-weight:bold;font-size:16px;">${client?.name || 'عميل عام'}</p>
             <p style="margin:5px 0 0;font-size:12px;">${client?.phone || ''} - ${client?.address || ''}</p>
           </div>
 
@@ -331,21 +329,18 @@ const Invoices: React.FC = () => {
             <p>${company.footer_text || 'شكراً لتعاملكم معنا'}</p>
           </div>
           <script>
-            // Auto print when loaded
             window.onload = function() { setTimeout(function() { window.print(); }, 800); };
           </script>
         </body>
         </html>
       `;
 
-      // Write content to existing window
       printWindow.document.open();
       printWindow.document.write(htmlContent);
       printWindow.document.close();
 
     } catch (error: any) {
       console.error('Print Error:', error);
-      // Show error in the window instead of closing it so user knows what happened
       if (printWindow) {
         printWindow.document.body.innerHTML = `
           <div style="color:red;text-align:center;padding:20px;font-family:sans-serif;">
